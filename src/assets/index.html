@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <title>LogBeacon</title>
+    <link rel="icon" href="/assets/favicon.ico" type="image/x-icon">
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400&display=swap" rel="stylesheet">
+    <style>
+        body,html {
+
+            font-family: 'Roboto', sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #1A2B3C;
+
+        }
+        .container {
+            background-color: white;
+            border-radius: 5px;
+            padding: 10px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+            text-align: left;
+        }
+        .header {
+            display: flex;
+            align-items: center;
+            padding: 20px 40px;
+            background: rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(8px);
+            border-radius: 12px;
+            box-shadow: 0 8px 16px rgba(0, 0, 0, 0.3);
+            max-width: 600px;
+            margin: 40px auto;
+        }
+        .logo {
+        width: 80px;
+        height: auto;
+        margin-right: 20px;
+        transition: transform 0.3s ease;
+        }
+        .logo:hover {
+        transform: scale(1.1) rotate(-2deg);
+        }
+        .title {
+            font-size: 3rem;
+            font-weight: 700;
+            font-family: 'Orbitron', sans-serif;
+            color: #ffffff;
+            text-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+            margin: 0;
+        }
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+        select, button {
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            background-color: white;
+            font-size: 14px;
+        }
+        button {
+            cursor: pointer;
+            background-color: #f0f0f0;
+            transition: background-color 0.2s;
+        }
+        button:hover {
+            background-color: #e0e0e0;
+        }
+        button:disabled {
+            cursor: not-allowed;
+            opacity: 0.6;
+        }
+        .log-container {
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            height: 600px;
+            overflow-y: auto;
+            background-color: #1e1e1e;
+            color: #f0f0f0;
+            font-family: monospace;
+            padding: 10px;
+            margin-bottom: 20px;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        .primary-button {
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+        }
+        .primary-button:hover {
+            background-color: #45a049;
+        }
+        .danger-button {
+            background-color: #f44336;
+            color: white;
+            border: none;
+        }
+        .danger-button:hover {
+            background-color: #d32f2f;
+        }
+        .status {
+            margin-top: 10px;
+            font-style: italic;
+            color: #666;
+        }
+        /* Mobile responsiveness */
+        @media (max-width: 768px) {
+            .controls {
+                flex-direction: column;
+            }
+            .controls select, .controls button {
+                width: 100%;
+                margin-bottom: 5px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <img src="/assets/Logbeacon_logo-transparent-sm.png" alt="LogBeacon Logo" class="logo">
+        <h1 class="title">LogBeacon</h1>
+    </div>
+    <div class="container">
+        <div class="controls">
+
+            <select id="containerSelect">
+                <option value=""> Select a container</option>
+            </select>
+            <button id="refreshContainers">🔄 Refresh List</button>
+            <button id="viewLogs" class="primary-button">🔍 View Logs</button>
+            <button id="followLogs">🔃 Follow Logs</button>
+            <button id="clearLogs">🧹 Clear Viewer</button>
+            <button id="exportLogs">💾 Export</button>
+        </div>
+        <div class="log-container" id="logOutput"></div>
+        <div class="status" id="status"></div>
+    </div>
+    <script>
+        // Get DOM elements
+        const containerSelect = document.getElementById('containerSelect');
+        const refreshButton = document.getElementById('refreshContainers');
+        const viewLogsButton = document.getElementById('viewLogs');
+        const followLogsButton = document.getElementById('followLogs');
+        const clearLogsButton = document.getElementById('clearLogs');
+        const exportLogsButton = document.getElementById('exportLogs');
+        const logOutput = document.getElementById('logOutput');
+        const statusElement = document.getElementById('status');
+        
+        // Variables for log following
+        let followInterval = null;
+        let lastLogTimestamp = null;
+        let selectedContainerId = null;
+        
+        // Function to load container list
+        function loadContainers() {
+            statusElement.textContent = 'Loading containers...';
+            
+            // Disable buttons during loading
+            setButtonsEnabled(false);
+            
+            fetch('/api/containers', {
+                method: 'GET',
+                cache: 'no-store' // Prevent caching
+            })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP error ${response.status}`);
+                    }
+                    return response.json();
+                })
+                .then(containers => {
+                    containerSelect.innerHTML = '<option value="">Select a container</option>';
+                    
+                    containers.forEach(container => {
+                        const option = document.createElement('option');
+                        option.value = container.id;
+                        option.textContent = `${container.name} (${container.id.substring(0, 12)})`;
+                        containerSelect.appendChild(option);
+                    });
+                    
+                    if (containers.length > 0) {
+                        statusElement.textContent = `${containers.length} containers found`;
+                    } else {
+                        statusElement.textContent = 'No running containers found';
+                    }
+                    
+                    // Re-enable buttons
+                    setButtonsEnabled(true);
+                })
+                .catch(error => {
+                    console.error('Error loading containers:', error);
+                    statusElement.textContent = 'Error loading containers: ' + error.message;
+                    setButtonsEnabled(true);
+                });
+        }
+        
+        // Function to view logs
+        function viewLogs(follow = false) {
+            const containerId = containerSelect.value;
+            
+            if (!containerId) {
+                statusElement.textContent = 'Please select a container';
+                return;
+            }
+            
+            selectedContainerId = containerId;
+            
+            if (follow) {
+                // If we're already following, don't start a new follow
+                if (followInterval) {
+                    stopFollowing();
+                    return;
+                }
+                
+                statusElement.textContent = 'Following logs...';
+                followLogsButton.textContent = 'Stop Following';
+                followLogsButton.classList.add('danger-button');
+                
+                // Disable other buttons during following
+                viewLogsButton.disabled = true;
+                
+                // Reset timestamp for new following session
+                lastLogTimestamp = Date.now();
+                
+                // First, load existing logs
+                fetchLogs(containerId, null)
+                    .then(logs => {
+                        logOutput.textContent = logs;
+                        logOutput.scrollTop = logOutput.scrollHeight;
+                        
+                        // Set up interval to fetch new logs
+                        followInterval = setInterval(fetchNewLogs, 2000);
+                    })
+                    .catch(error => {
+                        statusElement.textContent = 'Error loading initial logs: ' + error.message;
+                        stopFollowing();
+                    });
+            } else {
+                // Stop following if we're switching to view mode
+                stopFollowing();
+                
+                statusElement.textContent = 'Loading logs...';
+                
+                fetchLogs(containerId)
+                    .then(logs => {
+                        logOutput.textContent = logs;
+                        logOutput.scrollTop = logOutput.scrollHeight;
+                        statusElement.textContent = 'Logs loaded';
+                    })
+                    .catch(error => {
+                        statusElement.textContent = 'Error loading logs: ' + error.message;
+                    });
+            }
+        }
+        
+        // Function to fetch logs (returns a promise)
+        function fetchLogs(containerId, since = null) {
+            let url = `/api/logs/${encodeURIComponent(containerId)}`; // Encode container ID
+            if (since) {
+                url += `?since=${since}`;
+            }
+            
+            return fetch(url, {
+                method: 'GET',
+                cache: 'no-store'
+            })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP error ${response.status}`);
+                    }
+                    return response.text();
+                });
+        }
+        
+        // Function to fetch new logs when following
+        function fetchNewLogs() {
+            if (!selectedContainerId || !lastLogTimestamp) {
+                return;
+            }
+            
+            fetchLogs(selectedContainerId, lastLogTimestamp)
+                .then(logs => {
+                    if (logs.trim()) {
+                        // Append new logs and scroll to bottom
+                        logOutput.textContent += logs;
+                        logOutput.scrollTop = logOutput.scrollHeight;
+                    }
+                    lastLogTimestamp = Date.now();
+                })
+                .catch(error => {
+                    console.error('Error following logs:', error);
+                    statusElement.textContent = 'Error following logs: ' + error.message;
+                    stopFollowing();
+                });
+        }
+        
+        function stopFollowing() {
+            if (followInterval) {
+                clearInterval(followInterval);
+                followInterval = null;
+                followLogsButton.textContent = 'Follow Logs';
+                followLogsButton.classList.remove('danger-button');
+                statusElement.textContent = 'Stopped following logs';
+                viewLogsButton.disabled = false;
+            }
+        }
+        
+        function clearLogs() {
+            logOutput.textContent = '';
+            statusElement.textContent = 'Logs cleared';
+        }
+        
+        function exportLogs() {
+            const logs = logOutput.textContent;
+            
+            if (!logs.trim()) {
+                statusElement.textContent = 'No logs to export';
+                return;
+            }
+            
+            const containerId = containerSelect.value;
+            const containerName = containerSelect.options[containerSelect.selectedIndex].textContent;
+            const blob = new Blob([logs], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+            const safeName = containerName ? containerName.replace(/[^a-zA-Z0-9]/g, '_') : 'container';
+            
+            a.href = url;
+            a.download = `container_logs_${safeName}_${timestamp}.txt`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            
+            statusElement.textContent = 'Logs exported';
+        }
+        
+        function setButtonsEnabled(enabled) {
+            const buttons = [refreshButton, viewLogsButton, followLogsButton, clearLogsButton, exportLogsButton];
+            buttons.forEach(button => {
+                button.disabled = !enabled;
+            });
+        }
+        
+        function checkServerConnection() {
+            fetch('/', {
+                method: 'GET',
+                cache: 'no-store'
+            })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP error ${response.status}`);
+                    }
+                    console.log("Server connection successful");
+                    statusElement.textContent = "Connected to server successfully";
+                })
+                .catch(error => {
+                    console.error('Server connection error:', error);
+                    statusElement.textContent = 'Error connecting to server: ' + error.message;
+                });
+        }
+        
+        refreshButton.addEventListener('click', loadContainers);
+        viewLogsButton.addEventListener('click', () => viewLogs(false));
+        followLogsButton.addEventListener('click', () => viewLogs(true));
+        clearLogsButton.addEventListener('click', clearLogs);
+        exportLogsButton.addEventListener('click', exportLogs);
+        
+        containerSelect.addEventListener('change', () => {
+            if (followInterval) {
+                stopFollowing();
+            }
+            selectedContainerId = containerSelect.value;
+        });
+        
+        window.addEventListener('load', function() {
+            checkServerConnection();
+            loadContainers();
+        });
+    </script>
+</body>
+</html>
